@@ -1,4 +1,6 @@
 import os
+import this
+
 import numpy as np
 import librosa
 from sklearn.svm import SVC
@@ -14,7 +16,7 @@ class VoiceTrainer:
     def __init__(self, dataset_path, commands, sample_rate=11000):
         self.dataset_path = dataset_path
         self.commands = commands
-        self.sample_rate = sample_rate  # Aumentado para 16kHz
+        self.sample_rate = sample_rate
         self.model = None
         self.label2idx = {label: i for i, label in enumerate(commands)}
 
@@ -180,8 +182,16 @@ class VoiceTrainer:
             json.dump(self.label2idx, f)
         print("[INFO] Modelo e mapeamento salvos com sucesso.")
 
+    def trainAndSave(self, use_grid_search=True, model_path="svm_model.joblib", label_map_path="label_mapping.json"):
+        acc = self.train(use_grid_search=use_grid_search)
+        if acc:  # Se treinamento foi bem-sucedido (retornou uma acurácia)
+            self.save(model_path, label_map_path)
+
+
 # Exemplo de uso:
 if __name__ == "__main__":
-    trainer = VoiceTrainer("C:/Projects/Speech Emotion Recognition/files", ['yes', 'no'])
-    trainer.train(use_grid_search=True)  # Use False para treinamento mais rápido
-    trainer.save()
+    trainer = VoiceTrainer(
+        "C:\\Users\\ariel\\OneDrive\\Área de Trabalho\\Faculdade\\Aprendizado de maquina\\Keyword-Spotting\\files",
+        ['backward', 'forward', 'left', 'right', 'stop']
+    )
+    trainer.trainAndSave(use_grid_search=True)
