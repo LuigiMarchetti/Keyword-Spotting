@@ -150,7 +150,9 @@ class VoiceTrainerKNN:
 
             # Grid Search
             grid_search = GridSearchCV(
-                pipeline, param_grid, cv=5, scoring='accuracy',
+                pipeline, param_grid,
+                cv=5, # K-Fold Cross Validation
+                scoring='accuracy',
                 n_jobs=-1, verbose=1
             )
 
@@ -184,8 +186,8 @@ class VoiceTrainerKNN:
 
         return acc
 
-    def save(self, model_path="knn_model.joblib", label_map_path="label_mapping.json",
-             params_path="best_params.json"):
+    def save(self, model_path, label_map_path,
+             params_path):
         if self.model is None:
             print("[ERRO] Modelo não foi treinado ainda!")
             return
@@ -241,8 +243,8 @@ class VoiceTrainerKNN:
 if __name__ == "__main__":
     # Inicializar o treinador
     trainer = VoiceTrainerKNN(
-        dataset_path="C:/Projects/Speech Emotion Recognition/files",
-        commands=['go', 'stop', 'left', 'right', 'forward', 'backward']
+        dataset_path="../../files/dataset",
+        commands=['stop', 'left', 'right', 'forward', 'backward']
     )
 
     # Treinar com Grid Search (recomendado para encontrar melhores parâmetros)
@@ -250,7 +252,8 @@ if __name__ == "__main__":
     accuracy = trainer.train(use_grid_search=True)
 
     # Salvar modelo e parâmetros
-    trainer.save()
+    model_path = "../../files/models/KNN/"
+    trainer.save(model_path + "knn_model.joblib", model_path + "label_mapping.json", model_path + "best_params.json")
 
     # Exemplo de predição (descomente se tiver um arquivo de teste)
     # result = trainer.predict("path/to/test/audio.wav")

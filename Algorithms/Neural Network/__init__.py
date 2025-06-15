@@ -10,9 +10,10 @@ from sklearn.model_selection import train_test_split
 import json
 
 # Configurações
-DATASET_PATH = 'C:\\Projects\\Speech Emotion Recognition\\files'
-commands = ['go', 'stop', 'left', 'right', 'forward', 'backward']
-SAMPLE_RATE = 11000
+DATASET_PATH = '../../files/dataset'
+OUTPUT_PATH = '../../files/models/Neural Network/'
+commands = ['stop', 'left', 'right', 'forward', 'backward']
+SAMPLE_RATE = 16000
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Dataset personalizado
@@ -137,7 +138,7 @@ for epoch in range(EPOCHS):
     # Salvar melhor modelo
     if val_acc > best_acc:
         best_acc = val_acc
-        torch.save(model.state_dict(), "voice_model.pt")
+        torch.save(model.state_dict(), OUTPUT_PATH + "voice_model.pt")
         print(f"Novo melhor modelo salvo! Acurácia: {best_acc:.2f}%")
 
 # Avaliação final
@@ -145,7 +146,7 @@ print(f"\nMelhor acurácia de validação: {best_acc:.2f}%")
 
 # Salvar mapeamento de labels junto com o modelo
 label_mapping = {label: i for i, label in enumerate(commands)}
-with open("label_mapping.json", "w") as f:
+with open(OUTPUT_PATH + "label_mapping.json", "w") as f:
     json.dump(label_mapping, f)
 
 print("Modelo e mapeamento de labels salvos!")
