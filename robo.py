@@ -81,8 +81,7 @@ def execute_command(command):
         print("❓ Comando não reconhecido")
 
 
-# Loop principal
-print("🎙️ Robô iniciado. Fale um comando: left, right, forward, backward, stop")
+print("Robô iniciado. Fale um comando: left, right, forward, backward, stop")
 print("Diga 'stop' para encerrar.\n")
 
 try:

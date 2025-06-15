@@ -13,6 +13,8 @@ import json
 from tqdm import tqdm
 
 class VoiceTrainer:
+    ROOT_PATH = 'C:\\Users\\ariel\\OneDrive\\Área de Trabalho\\Faculdade\\Aprendizado de maquina\\Keyword-Spotting\\models\\'
+
     def __init__(self, dataset_path, commands, sample_rate=11000):
         self.dataset_path = dataset_path
         self.commands = commands
@@ -177,6 +179,9 @@ class VoiceTrainer:
             print("[ERRO] Modelo não foi treinado ainda!")
             return
 
+        model_path = f"{self.ROOT_PATH}{model_path}"
+        label_map_path = f"{self.ROOT_PATH}{label_map_path}"
+
         dump(self.model, model_path)
         with open(label_map_path, "w") as f:
             json.dump(self.label2idx, f)
@@ -184,7 +189,7 @@ class VoiceTrainer:
 
     def trainAndSave(self, use_grid_search=True, model_path="svm_model.joblib", label_map_path="label_mapping.json"):
         acc = self.train(use_grid_search=use_grid_search)
-        if acc:  # Se treinamento foi bem-sucedido (retornou uma acurácia)
+        if acc:
             self.save(model_path, label_map_path)
 
 
