@@ -1,0 +1,6 @@
+{
+  "kneighborsclassifier__metric": "euclidean",
+  "kneighborsclassifier__n_neighbors": 7,
+  "kneighborsclassifier__p": 1,
+  "kneighborsclassifier__weights": "distance"
+}
