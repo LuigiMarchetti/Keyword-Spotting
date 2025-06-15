@@ -86,7 +86,7 @@ print("Diga 'stop' para encerrar.\n")
 
 try:
     while True:
-        print("🎧 Aguardando você falar um comando...")
+        print("Aguardando você falar um comando...")
 
         audio = None
 
@@ -119,4 +119,4 @@ try:
         time.sleep(1)
 
 except KeyboardInterrupt:
-    print("🔚 Encerrando escuta manualmente...")
+    print("Encerrando escuta manualmente...")
