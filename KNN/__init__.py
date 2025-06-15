@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import librosa
-from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import train_test_split, GridSearchCV
@@ -10,12 +10,13 @@ from joblib import dump
 import json
 from tqdm import tqdm
 
-class VoiceTrainer:
+class VoiceTrainerKNN:
     def __init__(self, dataset_path, commands, sample_rate=11000):
         self.dataset_path = dataset_path
         self.commands = commands
-        self.sample_rate = sample_rate  # Aumentado para 16kHz
+        self.sample_rate = sample_rate
         self.model = None
+        self.best_params = None
         self.label2idx = {label: i for i, label in enumerate(commands)}
 
     def extract_features(self, signal, sr):
@@ -38,6 +39,9 @@ class VoiceTrainer:
         spectral_rolloff = librosa.feature.spectral_rolloff(y=signal, sr=sr)[0]
         zero_crossing_rate = librosa.feature.zero_crossing_rate(signal)[0]
 
+        # Features de energia
+        rms = librosa.feature.rms(y=signal)[0]
+
         # Estatísticas das features
         features = []
 
@@ -55,7 +59,8 @@ class VoiceTrainer:
         features.extend([
             [spectral_centroids.mean(), spectral_centroids.std()],
             [spectral_rolloff.mean(), spectral_rolloff.std()],
-            [zero_crossing_rate.mean(), zero_crossing_rate.std()]
+            [zero_crossing_rate.mean(), zero_crossing_rate.std()],
+            [rms.mean(), rms.std()]
         ])
 
         return np.concatenate([f.flatten() if hasattr(f, 'flatten') else f for f in features])
@@ -127,17 +132,21 @@ class VoiceTrainer:
         )
 
         if use_grid_search:
-            print("[INFO] Executando Grid Search para otimização de hiperparâmetros...")
+            print("[INFO] Executando Grid Search para otimização de hiperparâmetros KNN...")
 
-            # Parâmetros para busca
+            # Parâmetros para busca - otimizados para KNN
             param_grid = {
-                'svc__C': [0.1, 1, 10, 100],
-                'svc__gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1],
-                'svc__kernel': ['rbf', 'poly', 'sigmoid']
+                'kneighborsclassifier__n_neighbors': [3, 5, 7, 9, 11, 15, 21, 25],
+                'kneighborsclassifier__weights': ['uniform', 'distance'],
+                'kneighborsclassifier__metric': ['euclidean', 'manhattan', 'minkowski'],
+                'kneighborsclassifier__p': [1, 2]  # Para métrica minkowski (1=manhattan, 2=euclidean)
             }
 
-            # Pipeline
-            pipeline = make_pipeline(StandardScaler(), SVC(random_state=42))
+            # Pipeline com StandardScaler (importante para KNN)
+            pipeline = make_pipeline(
+                StandardScaler(),
+                KNeighborsClassifier()
+            )
 
             # Grid Search
             grid_search = GridSearchCV(
@@ -147,17 +156,22 @@ class VoiceTrainer:
 
             grid_search.fit(X_train, y_train)
             self.model = grid_search.best_estimator_
+            self.best_params = grid_search.best_params_
 
-            print(f"[INFO] Melhores parâmetros: {grid_search.best_params_}")
+            print(f"[INFO] Melhores parâmetros: {self.best_params}")
             print(f"[INFO] Melhor score CV: {grid_search.best_score_:.2%}")
 
         else:
-            # Parâmetros padrão melhorados
+            # Parâmetros padrão otimizados para reconhecimento de voz
             self.model = make_pipeline(
                 StandardScaler(),
-                SVC(kernel='rbf', C=10, gamma='scale', random_state=42)
+                KNeighborsClassifier(
+                    n_neighbors=7,
+                    weights='distance',
+                    metric='euclidean'
+                )
             )
-            print("[INFO] Treinando modelo SVM com parâmetros padrão...")
+            print("[INFO] Treinando modelo KNN com parâmetros padrão...")
             self.model.fit(X_train, y_train)
 
         # Avaliação
@@ -170,18 +184,82 @@ class VoiceTrainer:
 
         return acc
 
-    def save(self, model_path="svm_model.joblib", label_map_path="label_mapping.json"):
+    def save(self, model_path="knn_model.joblib", label_map_path="label_mapping.json",
+             params_path="best_params.json"):
         if self.model is None:
             print("[ERRO] Modelo não foi treinado ainda!")
             return
 
+        # Salvar modelo
         dump(self.model, model_path)
+
+        # Salvar mapeamento de labels
         with open(label_map_path, "w") as f:
             json.dump(self.label2idx, f)
-        print("[INFO] Modelo e mapeamento salvos com sucesso.")
+
+        # Salvar melhores parâmetros se disponíveis
+        if self.best_params is not None:
+            with open(params_path, "w") as f:
+                json.dump(self.best_params, f, indent=2)
+            print(f"[INFO] Melhores parâmetros salvos em: {params_path}")
+
+        print(f"[INFO] Modelo salvo em: {model_path}")
+        print(f"[INFO] Mapeamento de labels salvo em: {label_map_path}")
+
+    def predict(self, audio_path):
+        """Prediz a classe de um arquivo de áudio"""
+        if self.model is None:
+            print("[ERRO] Modelo não foi treinado ainda!")
+            return None
+
+        try:
+            # Carregar e processar áudio
+            signal, sr = librosa.load(audio_path, sr=self.sample_rate)
+            signal = self.preprocess_audio(signal, sr)
+            features = self.extract_features(signal, sr)
+
+            # Predição
+            features = features.reshape(1, -1)
+            prediction = self.model.predict(features)[0]
+            probabilities = self.model.predict_proba(features)[0]
+
+            # Converter índice para label
+            predicted_label = self.commands[prediction]
+            confidence = max(probabilities)
+
+            return {
+                'predicted_label': predicted_label,
+                'confidence': confidence,
+                'all_probabilities': {self.commands[i]: prob for i, prob in enumerate(probabilities)}
+            }
+
+        except Exception as e:
+            print(f"[ERRO] Falha ao processar {audio_path}: {e}")
+            return None
 
 # Exemplo de uso:
 if __name__ == "__main__":
-    trainer = VoiceTrainer("C:/Projects/Speech Emotion Recognition/files", ['yes', 'no'])
-    trainer.train(use_grid_search=True)  # Use False para treinamento mais rápido
+    # Inicializar o treinador
+    trainer = VoiceTrainerKNN(
+        dataset_path="C:/Projects/Speech Emotion Recognition/files",
+        commands=['go', 'stop', 'left', 'right', 'forward', 'backward']
+    )
+
+    # Treinar com Grid Search (recomendado para encontrar melhores parâmetros)
+    print("=== TREINAMENTO COM GRID SEARCH ===")
+    accuracy = trainer.train(use_grid_search=True)
+
+    # Salvar modelo e parâmetros
     trainer.save()
+
+    # Exemplo de predição (descomente se tiver um arquivo de teste)
+    # result = trainer.predict("path/to/test/audio.wav")
+    # if result:
+    #     print(f"Predição: {result['predicted_label']} (confiança: {result['confidence']:.2%})")
+
+    print(f"\n=== RESUMO ===")
+    print(f"Acurácia final: {accuracy:.2%}")
+    if trainer.best_params:
+        print("Melhores parâmetros encontrados:")
+        for param, value in trainer.best_params.items():
+            print(f"  {param}: {value}")

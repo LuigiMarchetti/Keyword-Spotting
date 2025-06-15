@@ -88,8 +88,8 @@ def predict_with_details(file_path):
     return idx2label[pred_idx], confidence
 
 test_files = [
-    "C:\\Projects\\Speech Emotion Recognition\\model\\no.wav",
-    "C:\\Projects\\Speech Emotion Recognition\\model\\yes.wav"
+    "C:\\Projects\\Speech Emotion Recognition\\recorded\\no.wav",
+    "C:\\Projects\\Speech Emotion Recognition\\recorded\\yes.wav"
 ]
 
 for test_file in test_files:

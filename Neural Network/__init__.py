@@ -11,7 +11,7 @@ import json
 
 # Configurações
 DATASET_PATH = 'C:\\Projects\\Speech Emotion Recognition\\files'
-commands = ['yes', 'no']  # ORDEM FIXA - não usar sorted()
+commands = ['go', 'stop', 'left', 'right', 'forward', 'backward']
 SAMPLE_RATE = 11000
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

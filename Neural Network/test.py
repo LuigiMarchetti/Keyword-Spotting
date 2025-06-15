@@ -37,7 +37,7 @@ if os.path.exists("label_mapping.json"):
     print(f"Mapeamento carregado: {label_mapping}")
 else:
     # Fallback para compatibilidade
-    commands = ['yes', 'no']
+    commands = ['yes', 'no', 'go', 'stop', 'left', 'right', 'forward', 'backward']
     print("AVISO: Usando mapeamento padrão. Recomendo retreinar o modelo com o código corrigido.")
 
 # Criar modelo e carregar pesos
@@ -78,8 +78,8 @@ def predict_with_details(file_path):
 
 # Teste com múltiplos arquivos para verificar
 test_files = [
-    "C:\\Projects\\Speech Emotion Recognition\\model\\no.wav",
-    "C:\\Projects\\Speech Emotion Recognition\\model\\yes.wav"
+    "C:\\Projects\\Speech Emotion Recognition\\recorded\\no.wav",
+    "C:\\Projects\\Speech Emotion Recognition\\recorded\\yes.wav"
     #"C:\\Projects\\Speech Emotion Recognition\\files\\no\\0a2b400e_nohash_1.wav",
     #"C:\\Projects\\Speech Emotion Recognition\\files\\yes\\0a7c2a8d_nohash_0.wav"  # adicione um arquivo yes
 ]
