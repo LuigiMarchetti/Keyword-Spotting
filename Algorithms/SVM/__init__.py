@@ -1,5 +1,4 @@
 import os
-import this
 
 import numpy as np
 import librosa
@@ -13,7 +12,7 @@ import json
 from tqdm import tqdm
 
 class VoiceTrainer:
-    ROOT_PATH = 'C:\\Users\\ariel\\OneDrive\\Área de Trabalho\\Faculdade\\Aprendizado de maquina\\Keyword-Spotting\\models\\'
+    ROOT_PATH = "../../files/models/SVM/"
 
     def __init__(self, dataset_path, commands, sample_rate=11000):
         self.dataset_path = dataset_path
@@ -145,7 +144,9 @@ class VoiceTrainer:
 
             # Grid Search
             grid_search = GridSearchCV(
-                pipeline, param_grid, cv=5, scoring='accuracy',
+                pipeline, param_grid,
+                cv=5, # K-Fold Cross Validation
+                scoring='accuracy',
                 n_jobs=-1, verbose=1
             )
 
@@ -174,7 +175,7 @@ class VoiceTrainer:
 
         return acc
 
-    def save(self, model_path="svm_model.joblib", label_map_path="label_mapping.json"):
+    def save(self, model_path, label_map_path):
         if self.model is None:
             print("[ERRO] Modelo não foi treinado ainda!")
             return
@@ -187,16 +188,16 @@ class VoiceTrainer:
             json.dump(self.label2idx, f)
         print("[INFO] Modelo e mapeamento salvos com sucesso.")
 
-    def trainAndSave(self, use_grid_search=True, model_path="svm_model.joblib", label_map_path="label_mapping.json"):
+    def trainAndSave(self, use_grid_search=True):
         acc = self.train(use_grid_search=use_grid_search)
         if acc:
-            self.save(model_path, label_map_path)
+            self.save("svm_model.joblib", "label_mapping.json")
 
 
 # Exemplo de uso:
 if __name__ == "__main__":
     trainer = VoiceTrainer(
-        "C:\\Users\\ariel\\OneDrive\\Área de Trabalho\\Faculdade\\Aprendizado de maquina\\Keyword-Spotting\\files",
+        "../../files/dataset",
         ['backward', 'forward', 'left', 'right', 'stop']
     )
     trainer.trainAndSave(use_grid_search=True)
