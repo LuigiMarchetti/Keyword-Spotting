@@ -4,6 +4,7 @@ import librosa
 import joblib
 import json
 import time
+from pathlib import Path
 
 # Parâmetros
 DURATION = 2  # segundos de escuta
@@ -11,8 +12,8 @@ SAMPLE_RATE = 11000
 COMMANDS = ["left", "right", "forward", "backward", "stop"]
 
 # Carregar modelo e mapeamento
-model = joblib.load("../SVM/svm_model.joblib")
-with open("../SVM/label_mapping.json", "r") as f:
+model = joblib.load("../../files/models/SVM/svm_model.joblib")
+with open("../../files/models/SVM/label_mapping.json", "r") as f:
     label_mapping = json.load(f)
 
 # Inverter mapeamento (de índice para label)

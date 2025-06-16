@@ -9,7 +9,7 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 import json
 
-# Configurações simples
+# Configurações
 DATASET_PATH = '../../files/dataset'
 OUTPUT_PATH = '../../files/models/Neural Network/'
 commands = ['stop', 'left', 'right', 'forward', 'backward']
@@ -142,7 +142,7 @@ def train_model(model, train_loader, val_loader, num_epochs=50):
         # Salva melhor modelo
         if val_acc > best_acc:
             best_acc = val_acc
-            torch.save(model.state_dict(), OUTPUT_PATH + "simple_voice_model.pt")
+            torch.save(model.state_dict(), OUTPUT_PATH + "voice_model.pt")
             print(f"✓ Melhor modelo salvo! Acurácia: {best_acc:.2f}%")
 
     return best_acc
