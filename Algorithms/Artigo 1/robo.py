@@ -8,8 +8,10 @@ from pathlib import Path
 
 # Parâmetros
 DURATION = 2  # segundos de escuta
-SAMPLE_RATE = 11000
+SAMPLE_RATE = 16000
 COMMANDS = ["left", "right", "forward", "backward", "stop"]
+CONFIDENCE_THRESHOLD = 0.3  # 30% de confiança mínima
+IS_MANUAL_MODE = True
 
 # Carregar modelo e mapeamento
 model = joblib.load("../../files/models/SVM/svm_model.joblib")
@@ -66,8 +68,12 @@ def extract_features(signal, sr):
     return np.concatenate([f.flatten() if hasattr(f, 'flatten') else f for f in features]).reshape(1, -1)
 
 
-def execute_command(command):
-    print(f"🔊 Comando detectado: {command}")
+def execute_command(command, confidence):
+    if confidence < CONFIDENCE_THRESHOLD:
+        print(f"❓ Comando não reconhecido (confiança: {confidence:.1%})")
+        return
+
+    print(f"🔊 Comando detectado: {command} (confiança: {confidence:.1%})")
     if command == "left":
         print("🤖 Virando para a ESQUERDA")
     elif command == "right":
@@ -82,42 +88,80 @@ def execute_command(command):
         print("❓ Comando não reconhecido")
 
 
-print("Robô iniciado. Fale um comando: left, right, forward, backward, stop")
-print("Diga 'stop' para encerrar.\n")
+def listen_and_predict(manual_mode=False):
+    """Função principal para capturar áudio e prever comandos"""
+    if manual_mode:
+        input("Pressione Enter para começar a gravar...")
+        print("Gravando...")
 
-try:
+    # Capturar áudio
+    audio = None
     while True:
-        print("Aguardando você falar um comando...")
+        buffer = sd.rec(int(DURATION * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype='float32')
+        sd.wait()
+        buffer = buffer.flatten()
 
-        audio = None
-
-        # Laço que escuta continuamente até detectar voz
-        while True:
-            buffer = sd.rec(int(DURATION * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype='float32')
-            sd.wait()
-            buffer = buffer.flatten()
-
-            if contains_voice(buffer, threshold=0.01):
-                audio = buffer
-                break
-            else:
-                time.sleep(0.5)
-
-        # Quando voz for detectada, processa
-        audio = preprocess_audio(audio, SAMPLE_RATE)
-        feat = extract_features(audio, SAMPLE_RATE)
-
-        # Prever comando
-        prediction = model.predict(feat)[0]
-        predicted_label = idx_to_label.get(prediction, "unknown")
-
-        execute_command(predicted_label)
-        print("-" * 40)
-
-        if predicted_label == "stop":
+        if contains_voice(buffer, threshold=0.01):
+            audio = buffer
             break
+        elif manual_mode:
+            return None  # Não detectou voz no modo manual
+        else:
+            time.sleep(0.5)
 
-        time.sleep(1)
+    # Processar áudio
+    audio = preprocess_audio(audio, SAMPLE_RATE)
+    feat = extract_features(audio, SAMPLE_RATE)
 
-except KeyboardInterrupt:
-    print("Encerrando escuta manualmente...")
+    # Prever comando e probabilidades (se disponível)
+    if hasattr(model, 'predict_proba'):
+        probas = model.predict_proba(feat)[0]
+        prediction = np.argmax(probas)
+        confidence = probas[prediction]
+    else:
+        prediction = model.predict(feat)[0]
+        confidence = 1.0  # Assume 100% de confiança se o modelo não fornecer probabilidades
+
+    predicted_label = idx_to_label.get(prediction, "unknown")
+
+    return predicted_label, confidence
+
+
+def main(manual_mode=False):
+    print("Robô iniciado. Fale um comando: left, right, forward, backward, stop")
+    print("Diga 'stop' para encerrar.\n")
+
+    try:
+        while True:
+            if manual_mode:
+                print("\nModo manual ativado - pressione Enter para gravar ou 'q' para sair")
+                user_input = input()
+                if user_input.lower() == 'q':
+                    break
+
+            result = listen_and_predict(manual_mode)
+            if result is None:
+                continue  # Não detectou voz no modo manual
+
+            command, confidence = result
+            execute_command(command, confidence)
+            print("-" * 40)
+
+            if command == "stop":
+                break
+
+            if not manual_mode:
+                time.sleep(1)
+
+    except KeyboardInterrupt:
+        print("Encerrando escuta manualmente...")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--manual', action='store_true', help='Ativar modo manual (pressionar Enter para gravar)')
+    args = parser.parse_args()
+
+    main(manual_mode=IS_MANUAL_MODE)
