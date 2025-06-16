@@ -1,0 +1,6 @@
+{
+  "kneighborsclassifier__metric": "manhattan",
+  "kneighborsclassifier__n_neighbors": 15,
+  "kneighborsclassifier__p": 1,
+  "kneighborsclassifier__weights": "distance"
+}

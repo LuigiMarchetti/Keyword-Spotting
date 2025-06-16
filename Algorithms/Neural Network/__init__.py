@@ -9,145 +9,193 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 import json
 
-# Configurações
+# Configurações simples
 DATASET_PATH = '../../files/dataset'
 OUTPUT_PATH = '../../files/models/Neural Network/'
 commands = ['stop', 'left', 'right', 'forward', 'backward']
 SAMPLE_RATE = 16000
+AUDIO_LENGTH = 2.0  # 2 segundos
+N_SAMPLES = int(SAMPLE_RATE * AUDIO_LENGTH)  # 32000 samples
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Dataset personalizado
-class MFCCDataset(Dataset):
-    def __init__(self, files, labels, commands):
+# Dataset simplificado
+class AudioDataset(Dataset):
+    def __init__(self, files, labels, commands, augment=False):
         self.files = files
         self.labels = labels
-        # CORREÇÃO: usar ordem fixa dos commands
+        self.augment = augment
         self.label2idx = {label: i for i, label in enumerate(commands)}
         print(f"Mapeamento de labels: {self.label2idx}")
 
     def __len__(self):
         return len(self.files)
 
+    def preprocess_audio(self, signal):
+        """Garante 2 segundos de áudio"""
+        if len(signal) > N_SAMPLES:
+            # Pega do centro
+            start = (len(signal) - N_SAMPLES) // 2
+            signal = signal[start:start + N_SAMPLES]
+        elif len(signal) < N_SAMPLES:
+            # Pad com zeros
+            signal = np.pad(signal, (0, N_SAMPLES - len(signal)), mode='constant')
+
+        # Normaliza volume
+        if np.max(np.abs(signal)) > 0:
+            signal = signal / np.max(np.abs(signal)) * 0.8
+
+        return signal
+
+    def add_noise(self, signal):
+        """Adiciona ruído leve"""
+        noise = np.random.randn(len(signal)) * 0.002
+        return signal + noise
+
     def __getitem__(self, idx):
         signal, sr = librosa.load(self.files[idx], sr=SAMPLE_RATE)
-        mfcc = librosa.feature.mfcc(y=signal, sr=sr, n_mfcc=20, n_fft=256, hop_length=128)
-        feat = np.concatenate([mfcc.mean(axis=1), mfcc.std(axis=1)])
-        return torch.tensor(feat, dtype=torch.float32), self.label2idx[self.labels[idx]]
+        signal = self.preprocess_audio(signal)
 
-# Coletar caminhos e rótulos
-X_paths, y_labels = [], []
-for label in commands:
-    folder = os.path.join(DATASET_PATH, label)
-    if not os.path.exists(folder):
-        print(f"ERRO: Pasta {folder} não encontrada!")
-        continue
+        # Augmentation simples (só ruído)
+        if self.augment and np.random.random() > 0.7:
+            signal = self.add_noise(signal)
 
-    files = [f for f in os.listdir(folder) if f.endswith('.wav')]
-    print(f"Encontrados {len(files)} arquivos para '{label}'")
+        # MFCCs básicos (13 coeficientes)
+        mfcc = librosa.feature.mfcc(y=signal, sr=sr, n_mfcc=13)
 
-    for fname in files:
-        X_paths.append(os.path.join(folder, fname))
-        y_labels.append(label)
+        # Normalização simples
+        mfcc = mfcc - np.mean(mfcc, axis=1, keepdims=True)
 
-print(f"Total de arquivos: {len(X_paths)}")
-print(f"Distribuição: {dict(zip(*np.unique(y_labels, return_counts=True)))}")
+        # Flatten para entrada do MLP
+        mfcc_flat = mfcc.flatten()
 
-# Treino/teste
-X_train, X_test, y_train, y_test = train_test_split(X_paths, y_labels, test_size=0.2, random_state=42, stratify=y_labels)
-train_dataset = MFCCDataset(X_train, y_train, commands)
-test_dataset = MFCCDataset(X_test, y_test, commands)
+        return torch.tensor(mfcc_flat, dtype=torch.float32), self.label2idx[self.labels[idx]]
 
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=32)
-
-# Modelo simples MLP
 class VoiceClassifier(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, input_size, num_classes):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Linear(40, 64),
+            nn.Linear(input_size, 256),
             nn.ReLU(),
-            nn.Dropout(0.3),  # Adicionado dropout
-            nn.Linear(64, 32),
-            nn.ReLU(),
+            nn.BatchNorm1d(256),
             nn.Dropout(0.3),
-            nn.Linear(32, num_classes)
+
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.BatchNorm1d(128),
+            nn.Dropout(0.3),
+
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.BatchNorm1d(64),
+            nn.Dropout(0.2),
+
+            nn.Linear(64, num_classes)
         )
 
     def forward(self, x):
         return self.model(x)
 
-model = VoiceClassifier(num_classes=len(commands)).to(device)
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-criterion = nn.CrossEntropyLoss()
+def train_model(model, train_loader, val_loader, num_epochs=50):
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    criterion = nn.CrossEntropyLoss()
+    best_acc = 0
 
-# Função para calcular acurácia
-def calculate_accuracy(model, dataloader):
-    model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for inputs, labels in dataloader:
+    for epoch in range(num_epochs):
+        # Treinamento
+        model.train()
+        train_loss = 0
+        train_correct = 0
+        train_total = 0
+
+        for inputs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
             inputs, labels = inputs.to(device), labels.to(device)
+
+            optimizer.zero_grad()
             outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
             _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-    return 100. * correct / total
+            train_total += labels.size(0)
+            train_correct += predicted.eq(labels).sum().item()
 
-# Treinamento com mais épocas e validação
-EPOCHS = 50  # Aumentado significativamente
-best_acc = 0
-train_losses = []
-train_accs = []
-val_accs = []
+        # Validação
+        model.eval()
+        val_correct = 0
+        val_total = 0
 
-for epoch in range(EPOCHS):
-    model.train()
-    epoch_loss = 0
-    correct = 0
-    total = 0
+        with torch.no_grad():
+            for inputs, labels in val_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                _, predicted = outputs.max(1)
+                val_total += labels.size(0)
+                val_correct += predicted.eq(labels).sum().item()
 
-    loop = tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS}")
-    for inputs, labels in loop:
-        inputs, labels = inputs.to(device), labels.to(device)
+        train_acc = 100. * train_correct / train_total
+        val_acc = 100. * val_correct / val_total
 
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+        print(f"Epoch {epoch+1}: Train Acc: {train_acc:.2f}%, Val Acc: {val_acc:.2f}%")
 
-        epoch_loss += loss.item()
-        _, predicted = outputs.max(1)
-        total += labels.size(0)
-        correct += predicted.eq(labels).sum().item()
+        # Salva melhor modelo
+        if val_acc > best_acc:
+            best_acc = val_acc
+            torch.save(model.state_dict(), OUTPUT_PATH + "simple_voice_model.pt")
+            print(f"✓ Melhor modelo salvo! Acurácia: {best_acc:.2f}%")
 
-        loop.set_postfix(loss=loss.item(), acc=100. * correct / total)
+    return best_acc
 
-    # Calcular acurácias
-    train_acc = 100. * correct / total
-    val_acc = calculate_accuracy(model, test_loader)
+if __name__ == "__main__":
+    os.makedirs(OUTPUT_PATH, exist_ok=True)
 
-    train_losses.append(epoch_loss / len(train_loader))
-    train_accs.append(train_acc)
-    val_accs.append(val_acc)
+    # Coletar dados
+    X_paths, y_labels = [], []
+    for label in commands:
+        folder = os.path.join(DATASET_PATH, label)
+        if not os.path.exists(folder):
+            print(f"ERRO: Pasta {folder} não encontrada!")
+            continue
 
-    print(f"Epoch {epoch+1}: Train Acc: {train_acc:.2f}%, Val Acc: {val_acc:.2f}%")
+        files = [f for f in os.listdir(folder) if f.endswith('.wav')]
+        print(f"'{label}': {len(files)} arquivos")
 
-    # Salvar melhor modelo
-    if val_acc > best_acc:
-        best_acc = val_acc
-        torch.save(model.state_dict(), OUTPUT_PATH + "voice_model.pt")
-        print(f"Novo melhor modelo salvo! Acurácia: {best_acc:.2f}%")
+        for fname in files:
+            X_paths.append(os.path.join(folder, fname))
+            y_labels.append(label)
 
-# Avaliação final
-print(f"\nMelhor acurácia de validação: {best_acc:.2f}%")
+    print(f"\nTotal: {len(X_paths)} arquivos")
 
-# Salvar mapeamento de labels junto com o modelo
-label_mapping = {label: i for i, label in enumerate(commands)}
-with open(OUTPUT_PATH + "label_mapping.json", "w") as f:
-    json.dump(label_mapping, f)
+    # Divisão treino/teste
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_paths, y_labels, test_size=0.2, random_state=42, stratify=y_labels
+    )
 
-print("Modelo e mapeamento de labels salvos!")
-print(f"Mapeamento final: {label_mapping}")
+    # Datasets
+    train_dataset = AudioDataset(X_train, y_train, commands, augment=True)
+    test_dataset = AudioDataset(X_test, y_test, commands, augment=False)
+
+    # Descobrir tamanho da entrada (primeiro sample)
+    sample_input, _ = train_dataset[0]
+    input_size = sample_input.shape[0]
+    print(f"Tamanho da entrada: {input_size}")
+
+    # DataLoaders
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+    # Modelo
+    model = VoiceClassifier(input_size, len(commands)).to(device)
+    print(f"Modelo criado! Device: {device}")
+
+    # Treinamento
+    print("\nIniciando treinamento...")
+    best_acc = train_model(model, train_loader, test_loader)
+
+    print(f"\nMelhor acurácia: {best_acc:.2f}%")
+
+    # Salvar mapeamento
+    label_mapping = {label: i for i, label in enumerate(commands)}
+    with open(OUTPUT_PATH + "label_mapping.json", "w") as f:
+        json.dump(label_mapping, f, indent=2)
