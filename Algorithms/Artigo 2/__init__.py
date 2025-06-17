@@ -8,12 +8,28 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
 from torchvision.models import swin_t, Swin_T_Weights
+import torchvision.transforms as T
+from torchvision.transforms.functional import resize
 
+# Caminhos
 DATASET_PATH = '../../files'
+OUTPUT_PATH = '../../files/models/Artigo 2/'
 
-class VoiceDataset(Dataset):
+# Comandos de voz
+COMMANDS = ['backward', 'forward', 'left', 'right', 'stop']
+
+# Hiperparâmetros
+SAMPLE_RATE = 16000
+IMG_SIZE = 224
+N_MELS = 128
+BATCH_SIZE = 16
+EPOCHS = 30
+LEARNING_RATE = 1e-4
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+# Dataset PyTorch
+class VoiceDataset(torch.utils.data.Dataset):
     def __init__(self, X, y):
         self.X = torch.tensor(X, dtype=torch.float32)
         self.y = torch.tensor(y, dtype=torch.long)
@@ -24,135 +40,121 @@ class VoiceDataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
 
+# Modelo Swin
 class VoiceSwin(nn.Module):
     def __init__(self, num_classes):
-        super(VoiceSwin, self).__init__()
+        super().__init__()
         self.backbone = swin_t(weights=Swin_T_Weights.IMAGENET1K_V1)
         self.backbone.head = nn.Linear(self.backbone.head.in_features, num_classes)
 
     def forward(self, x):
         return self.backbone(x)
 
-class VoiceTrainerSwin:
-    OUTPUT_PATH = '../../files/models/Artigo 2/'
+# Pré-processamento
+def preprocess_audio(signal, sample_rate=SAMPLE_RATE):
+    signal = librosa.util.normalize(signal)
+    signal, _ = librosa.effects.trim(signal, top_db=20)
+    target_length = sample_rate
+    if len(signal) > target_length:
+        signal = signal[:target_length]
+    else:
+        signal = np.pad(signal, (0, target_length - len(signal)), 'constant')
+    return signal
 
-    def __init__(self, dataset_path, commands, sample_rate=16000, device=None):
-        self.dataset_path = dataset_path
-        self.commands = commands
-        self.sample_rate = sample_rate
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = None
-        self.label2idx = {label: i for i, label in enumerate(commands)}
-        print(f"[INFO] Usando dispositivo: {self.device}")
-        if self.device == "cuda":
-            print(f"[INFO] Nome da GPU: {torch.cuda.get_device_name(0)}")
+def extract_logmel(signal, sr=SAMPLE_RATE):
+    mel = librosa.feature.melspectrogram(y=signal, sr=sr, n_mels=N_MELS)
+    logmel = librosa.power_to_db(mel, ref=np.max)
+    return logmel
 
-    def preprocess_audio(self, signal):
-        signal = librosa.util.normalize(signal)
-        signal, _ = librosa.effects.trim(signal, top_db=20)
-        target_length = self.sample_rate
-        if len(signal) > target_length:
-            signal = signal[:target_length]
-        else:
-            signal = np.pad(signal, (0, target_length - len(signal)), 'constant')
-        return signal
+def load_data(dataset_path, commands):
+    label2idx = {label: i for i, label in enumerate(commands)}
+    X, y = [], []
 
-    def extract_logmel(self, signal):
-        mel = librosa.feature.melspectrogram(y=signal, sr=self.sample_rate, n_mels=128)
-        logmel = librosa.power_to_db(mel, ref=np.max)
-        return logmel
+    for label in commands:
+        folder = os.path.join(dataset_path, label)
+        if not os.path.exists(folder):
+            print(f"[AVISO] Pasta não encontrada: {folder}")
+            continue
 
-    def load_data(self):
-        X, y = [], []
-        for label in self.commands:
-            folder = os.path.join(self.dataset_path, label)
-            if not os.path.exists(folder):
-                print(f"[ERRO] Pasta não encontrada: {folder}")
+        for fname in tqdm(os.listdir(folder), desc=f"Processando {label}"):
+            if not fname.endswith('.wav'):
                 continue
-            for fname in tqdm(os.listdir(folder), desc=f"Processando {label}"):
-                if not fname.endswith('.wav'):
+            path = os.path.join(folder, fname)
+            try:
+                signal, sr = librosa.load(path, sr=SAMPLE_RATE)
+                if len(signal) < 0.5 * sr:
                     continue
-                path = os.path.join(folder, fname)
-                try:
-                    signal, sr = librosa.load(path, sr=self.sample_rate)
-                    if len(signal) < 0.5 * sr:
-                        continue
-                    signal = self.preprocess_audio(signal)
-                    logmel = self.extract_logmel(signal)
-                    logmel = np.stack([logmel] * 3, axis=0)  # (3, H, W)
-                    X.append(logmel)
-                    y.append(self.label2idx[label])
-                except Exception as e:
-                    print(f"Erro ao processar {path}: {e}")
-        return np.array(X), np.array(y)
+                signal = preprocess_audio(signal)
+                logmel = extract_logmel(signal)  # (128, T)
 
-    def train(self, epochs=30, batch_size=16, lr=1e-4):
-        X, y = self.load_data()
-        if len(X) == 0:
-            print("[ERRO] Nenhum dado carregado!")
-            return
+                # Redimensionar para (224, 224) e replicar para 3 canais
+                img = resize(torch.tensor(logmel).unsqueeze(0), [IMG_SIZE, IMG_SIZE])  # (1, 224, 224)
+                img = img.repeat(3, 1, 1)  # (3, 224, 224)
 
-        max_w = max(x.shape[2] for x in X)
-        X = np.array([np.pad(x, ((0, 0), (0, 0), (0, max_w - x.shape[2])), mode='constant') for x in X])
+                X.append(img.numpy())
+                y.append(label2idx[label])
+            except Exception as e:
+                print(f"[ERRO] {path}: {e}")
+    return np.array(X), np.array(y), label2idx
 
-        X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
+# Função principal de treino
+def train_swin():
+    print(f"[INFO] Dispositivo usado: {DEVICE}")
+    if DEVICE == 'cuda':
+        print(f"[INFO] GPU: {torch.cuda.get_device_name(0)}")
 
-        train_ds = VoiceDataset(X_train, y_train)
-        test_ds = VoiceDataset(X_test, y_test)
-        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-        test_loader = DataLoader(test_ds, batch_size=batch_size)
+    X, y, label2idx = load_data(DATASET_PATH, COMMANDS)
 
-        num_classes = len(self.commands)
-        self.model = VoiceSwin(num_classes).to(self.device)
-        optimizer = optim.AdamW(self.model.parameters(), lr=lr)
-        criterion = nn.CrossEntropyLoss()
+    if len(X) == 0:
+        print("[ERRO] Nenhum dado carregado!")
+        return
 
-        for epoch in range(epochs):
-            self.model.train()
-            total_loss = 0
-            for xb, yb in train_loader:
-                xb = xb.to(self.device)
-                yb = yb.to(self.device)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
 
-                optimizer.zero_grad()
-                out = self.model(xb)
-                loss = criterion(out, yb)
-                loss.backward()
-                optimizer.step()
-                total_loss += loss.item()
+    train_ds = VoiceDataset(X_train, y_train)
+    test_ds = VoiceDataset(X_test, y_test)
 
-            print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss/len(train_loader):.4f}")
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+    test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE)
 
-        # Avaliação
-        self.model.eval()
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for xb, yb in test_loader:
-                xb = xb.to(self.device)
-                yb = yb.to(self.device)
-                preds = self.model(xb).argmax(dim=1)
-                correct += (preds == yb).sum().item()
-                total += yb.size(0)
+    model = VoiceSwin(num_classes=len(COMMANDS)).to(DEVICE)
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
+    criterion = nn.CrossEntropyLoss()
 
-        print(f"\n[RESULTADO] Acurácia no teste: {correct / total:.2%}")
+    for epoch in range(EPOCHS):
+        model.train()
+        total_loss = 0
+        for xb, yb in train_loader:
+            xb, yb = xb.to(DEVICE), yb.to(DEVICE)
 
-    def save(self, model_name='swin_model.pth', label_map_name='label_mapping.json'):
-        model_path = os.path.join(self.OUTPUT_PATH, model_name)
-        label_map_path = os.path.join(self.OUTPUT_PATH, label_map_name)
+            optimizer.zero_grad()
+            preds = model(xb)
+            loss = criterion(preds, yb)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
 
-        torch.save(self.model.state_dict(), model_path)
-        with open(label_map_path, 'w') as f:
-            json.dump(self.label2idx, f)
-        print("[INFO] Modelo e mapeamento salvos.")
+        print(f"[EPOCH {epoch+1}/{EPOCHS}] Loss: {total_loss / len(train_loader):.4f}")
 
-    def trainAndSave(self):
-        self.train()
-        self.save()
+    # Avaliação
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for xb, yb in test_loader:
+            xb, yb = xb.to(DEVICE), yb.to(DEVICE)
+            preds = model(xb).argmax(dim=1)
+            correct += (preds == yb).sum().item()
+            total += yb.size(0)
+
+    print(f"[RESULTADO] Acurácia de teste: {correct / total:.2%}")
+
+    # Salvar modelo e rótulos
+    os.makedirs(OUTPUT_PATH, exist_ok=True)
+    torch.save(model.state_dict(), os.path.join(OUTPUT_PATH, 'swin_model.pth'))
+    with open(os.path.join(OUTPUT_PATH, 'label_mapping.json'), 'w') as f:
+        json.dump(label2idx, f)
+    print("[INFO] Modelo salvo com sucesso.")
 
 if __name__ == "__main__":
-    trainer = VoiceTrainerSwin(
-        DATASET_PATH,
-        ['backward', 'forward', 'left', 'right', 'stop']
-    )
-    trainer.trainAndSave()
+    train_swin()
