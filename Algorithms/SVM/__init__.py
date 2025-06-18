@@ -194,7 +194,6 @@ class VoiceTrainer:
             self.save("svm_model.joblib", "label_mapping.json")
 
 
-# Exemplo de uso:
 if __name__ == "__main__":
     trainer = VoiceTrainer(
         "../../files/dataset",

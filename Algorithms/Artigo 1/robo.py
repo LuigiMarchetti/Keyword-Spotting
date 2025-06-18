@@ -13,7 +13,7 @@ COMMANDS = ["left", "right", "forward", "backward", "stop"]
 CONFIDENCE_THRESHOLD = 0.3  # 30% de confiança mínima
 IS_MANUAL_MODE = True
 
-# Carregar modelo e mapeamento
+# Carrega o melhor modelo e o seu mapeamento
 model = joblib.load("../../files/models/SVM/svm_model.joblib")
 with open("../../files/models/SVM/label_mapping.json", "r") as f:
     label_mapping = json.load(f)

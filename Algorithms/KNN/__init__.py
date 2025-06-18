@@ -241,7 +241,6 @@ class VoiceTrainerKNN:
 
 # Exemplo de uso:
 if __name__ == "__main__":
-    # Inicializar o treinador
     trainer = VoiceTrainerKNN(
         dataset_path="../../files/dataset",
         commands=['stop', 'left', 'right', 'forward', 'backward']
@@ -254,11 +253,6 @@ if __name__ == "__main__":
     # Salvar modelo e parâmetros
     model_path = "../../files/models/KNN/"
     trainer.save(model_path + "knn_model.joblib", model_path + "label_mapping.json", model_path + "best_params.json")
-
-    # Exemplo de predição (descomente se tiver um arquivo de teste)
-    # result = trainer.predict("path/to/test/audio.wav")
-    # if result:
-    #     print(f"Predição: {result['predicted_label']} (confiança: {result['confidence']:.2%})")
 
     print(f"\n=== RESUMO ===")
     print(f"Acurácia final: {accuracy:.2%}")
