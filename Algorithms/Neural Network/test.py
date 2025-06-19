@@ -18,7 +18,7 @@ TEST_PATH_RECORDED = SCRIPT_DIR / '../../files/recorded'
 SAMPLES = ['ari', 'luigi']
 WORDS = ['stop', 'left', 'right', 'forward', 'backward']
 SAMPLE_RATE = 16000
-AUDIO_LENGTH = 2.0
+AUDIO_LENGTH = 1.0
 N_SAMPLES = int(SAMPLE_RATE * AUDIO_LENGTH)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

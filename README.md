@@ -14,6 +14,7 @@ Este projeto utiliza algoritmos de aprendizado de máquina para reconhecer coman
 
 - **files/**
   - **dataset/**: Deve conter o conjunto de dados de comandos de voz (Speech Commands Dataset v0.02), organizado em subpastas por palavra (ex: `forward/`, `right/`, `left/`, etc).
+  - **docs/**: Artigo simulando SBC do repositório (limite 5 páginas) e apresentação powerpoint em formato de Seminário.
   - **models/**: Modelos treinados e arquivos de mapeamento de rótulos para cada algoritmo:
     - Subpastas para cada abordagem (`Neural Network/`, `SVM/`, `KNN/`, `Artigo 1/`), contendo arquivos como `voice_model.pt`, `svm_model.joblib`, `knn_model.joblib` e arquivos de mapeamento (`label_mapping.json`) dos labels.
     - Arquivos na raiz da pasta para modelos específicos (ex: `voice_model_yes_no_only.pt`).

@@ -14,7 +14,7 @@ DATASET_PATH = '../../files/dataset'
 OUTPUT_PATH = '../../files/models/Neural Network/'
 commands = ['stop', 'left', 'right', 'forward', 'backward']
 SAMPLE_RATE = 16000
-AUDIO_LENGTH = 2.0  # 2 segundos
+AUDIO_LENGTH = 1.0  # 1 segundo
 N_SAMPLES = int(SAMPLE_RATE * AUDIO_LENGTH)  # 32000 samples
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -31,7 +31,7 @@ class AudioDataset(Dataset):
         return len(self.files)
 
     def preprocess_audio(self, signal):
-        """Garante 2 segundos de áudio"""
+        """Garante 1 segundo de áudio"""
         if len(signal) > N_SAMPLES:
             # Pega do centro
             start = (len(signal) - N_SAMPLES) // 2
